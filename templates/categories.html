@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Категории{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="bi bi-list-ul"></i> Управление категориями</h4>
+                {% if user.is_staff %}
+                    <button class="btn btn-success" onclick="showCreateCategoryModal()">
+                        <i class="bi bi-plus-circle"></i> Добавить категорию
+                    </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <input type="text" id="search-categories" class="form-control" placeholder="Поиск по названию категории..." 
+                               onkeyup="loadCategories(1)">
+                    </div>
+                </div>
+                
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Название</th>
+                                <th>Описание</th>
+                                <th>Количество товаров</th>
+                                {% if user.is_staff %}
+                                <th>Действия</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody id="categories-table-body">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="categories-pagination" class="pagination-container"></div>
+                
+                <div id="categories-message"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="categoryModalTitle">Добавить категорию</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="categoryForm">
+                <div class="modal-body">
+                    <input type="hidden" id="category-id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Название категории *</label>
+                        <input type="text" class="form-control" id="category-name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Описание</label>
+                        <textarea class="form-control" id="category-description" rows="4"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary" id="categorySubmitBtn">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentCategoriesPage = 1;
+
+
+function loadCategories(page = 1) {
+    currentCategoriesPage = page;
+    
+    const search = $('#search-categories').val();
+    
+    let url = API_BASE_URL + `categories/?page=${page}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    
+    showLoading($('#categories-table-body'));
+    $('#categories-message').empty();
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(data) {
+            console.log('Категории загружены:', data);
+            renderCategoriesTable(data);
+            renderPagination('categories-pagination', data, 'loadCategories');
+        },
+        error: function(error) {
+            showError($('#categories-table-body'), 'Ошибка загрузки категорий');
+            console.error('Ошибка:', error);
+        }
+    });
+}
+
+function loadProductsCountForCategories(categories, callback) {
+    const promises = categories.map(category => {
+        return new Promise((resolve) => {
+            $.ajax({
+                url: API_BASE_URL + `products/?category=${category.id}`,
+                method: 'GET',
+                success: function(data) {
+                    category.productCount = getCount(data);
+                    resolve();
+                },
+                error: function() {
+                    category.productCount = 0;
+                    resolve();
+                }
+            });
+        });
+    });
+    
+    Promise.all(promises).then(() => {
+        if (callback) callback(categories);
+    });
+}
+
+
+function renderCategoriesTable(data) {
+    const categories = getItems(data);
+    const tbody = $('#categories-table-body');
+    
+    if (categories.length === 0) {
+        tbody.html('<tr><td colspan="4" class="text-center">Категории не найдены</td></tr>');
+        return;
+    }
+    
+
+    let html = '';
+    categories.forEach(category => {
+        html += `
+        <tr id="category-row-${category.id}">
+            <td><strong>${category.name}</strong></td>
+            <td>${category.description || '<span class="text-muted">Нет описания</span>'}</td>
+            <td id="category-count-${category.id}">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+            </td>
+            {% if user.is_staff %}
+            <td class="action-buttons">
+                <button class="btn btn-sm btn-info me-1" onclick="showEditCategoryModal(${category.id})" title="Редактировать">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="confirmDeleteCategory(${category.id}, '${category.name}')" title="Удалить">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td
+            {% endif %}
+        </tr>`;
+    });
+    
+    tbody.html(html);
+    
+
+    loadProductsCountForCategories(categories, (categoriesWithCounts) => {
+        categoriesWithCounts.forEach(category => {
+            $(`#category-count-${category.id}`).html(`
+                <span class="badge ${category.productCount > 0 ? 'bg-primary' : 'bg-secondary'}">
+                    ${category.productCount} товаров
+                </span>
+            `);
+        });
+    });
+}
+
+
+function showCreateCategoryModal() {
+    $('#categoryModalTitle').text('Добавить категорию');
+    $('#categoryForm')[0].reset();
+    $('#category-id').val('');
+    $('#categorySubmitBtn').text('Создать');
+    
+    const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
+    modal.show();
+}
+
+
+function showEditCategoryModal(categoryId) {
+    $.ajax({
+        url: API_BASE_URL + 'categories/' + categoryId + '/',
+        method: 'GET',
+        success: function(category) {
+            $('#categoryModalTitle').text('Редактировать категорию');
+            $('#category-id').val(category.id);
+            $('#category-name').val(category.name);
+            $('#category-description').val(category.description || '');
+            $('#categorySubmitBtn').text('Сохранить изменения');
+            
+            const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
+            modal.show();
+        }
+    });
+}
+
+
+$('#categoryForm').submit(function(e) {
+    e.preventDefault();
+    
+    const categoryId = $('#category-id').val();
+    const url = categoryId ? 
+        API_BASE_URL + 'categories/' + categoryId + '/' : 
+        API_BASE_URL + 'categories/';
+    const method = categoryId ? 'PUT' : 'POST';
+    
+    const data = {
+        name: $('#category-name').val(),
+        description: $('#category-description').val()
+    };
+    
+    $('#categorySubmitBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status"></span> Сохранение...');
+    
+    $.ajax({
+        url: url,
+        method: method,
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            $('#categoryModal').modal('hide');
+            showAlert(categoryId ? 'Категория успешно обновлена!' : 'Категория успешно создана!');
+            loadCategories(currentCategoriesPage);
+        },
+        error: function(error) {
+            let message = 'Ошибка сохранения категории';
+            if (error.responseJSON) {
+                message += ': ' + Object.values(error.responseJSON).join(', ');
+            }
+            alert(message);
+        },
+        complete: function() {
+            $('#categorySubmitBtn').prop('disabled', false).text(categoryId ? 'Сохранить изменения' : 'Создать');
+        }
+    });
+});
+
+
+function confirmDeleteCategory(categoryId, categoryName) {
+    showConfirmation(
+        `Вы уверены, что хотите удалить категорию <strong>"${categoryName}"</strong>?<br>
+         <small class="text-danger">Все товары в этой категории будут без категории!</small>`,
+        function() {
+            deleteCategory(categoryId);
+        }
+    );
+}
+
+
+function deleteCategory(categoryId) {
+    $.ajax({
+        url: API_BASE_URL + 'categories/' + categoryId + '/',
+        method: 'DELETE',
+        success: function() {
+            showAlert('Категория успешно удалена!');
+            loadCategories(currentCategoriesPage);
+        },
+        error: function() {
+            showAlert('Ошибка при удалении категории', 'danger');
+        }
+    });
+}
+
+
+$(document).ready(function() {
+    loadCategories(1);
+});
+</script>
+{% endblock %}

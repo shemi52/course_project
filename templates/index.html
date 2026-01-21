@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Главная страница{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-speedometer2"></i> Панель управления</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card text-white bg-success mb-3">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Товары</h5>
+                                <p class="card-text display-6" id="products-count">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-white bg-info mb-3">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Активные скидки</h5>
+                                <p class="card-text display-6" id="active-discounts-count">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-white bg-warning mb-3">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Категории</h5>
+                                <p class="card-text display-6" id="categories-count">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% if user.is_staff %}
+                    <div class="col-md-3">
+                        <div class="card text-white bg-secondary mb-3">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Использования</h5>
+                                <p class="card-text display-6" id="usages-count">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-tag"></i> Активные скидки</h5>
+                            </div>
+                            <div class="card-body" id="active-discounts-list">
+                                <div class="text-center">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Загрузка...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if user.is_staff %}
+                    <div class="col-md-6">
+                        <div class="card">
+                            
+                            <div class="card-header">
+                                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Последние использования</h5>
+                            </div>
+                            
+                            <div class="card-body" id="recent-usages">
+                                <div class="text-center">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Загрузка...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    
+    $.ajax({
+        url: API_BASE_URL + 'products/',
+        method: 'GET',
+        success: function(data) {
+            console.log('Товары:', data);
+            const count = getCount(data);
+            $('#products-count').text(count);
+        },
+        error: function(error) {
+            console.error('Ошибка товаров:', error);
+            $('#products-count').text('0');
+        }
+    });
+    
+    $.ajax({
+        url: API_BASE_URL + 'discounts/?status=active',
+        method: 'GET',
+        success: function(data) {
+            console.log('Активные скидки:', data);
+            const count = getCount(data);
+            $('#active-discounts-count').text(count);
+            
+            const discounts = getItems(data);
+            let html = '';
+            
+            if (discounts && discounts.length > 0) {
+                discounts.slice(0, 5).forEach(discount => {
+                    const valueDisplay = discount.discount_type === 'percentage' ? 
+                        discount.value + '%' : 
+                        formatPrice(discount.value);
+                    
+                    html += `
+                    <div class="alert alert-success mb-2">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>${discount.name}</strong><br>
+                                <small>${valueDisplay} • До ${formatDateTime(discount.end_date)}</small>
+                            </div>
+                            <span class="badge bg-success">Активна</span>
+                        </div>
+                    </div>`;
+                });
+            } else {
+                html = '<div class="alert alert-info">Нет активных скидок</div>';
+            }
+            $('#active-discounts-list').html(html);
+        },
+        error: function(error) {
+            console.error('Ошибка скидок:', error);
+            $('#active-discounts-count').text('0');
+            $('#active-discounts-list').html('<div class="alert alert-danger">Ошибка загрузки</div>');
+        }
+    });
+    
+    $.ajax({
+        url: API_BASE_URL + 'categories/',
+        method: 'GET',
+        success: function(data) {
+            console.log('Категории:', data);
+            const count = getCount(data);
+            $('#categories-count').text(count);
+        },
+        error: function(error) {
+            console.error('Ошибка категорий:', error);
+            $('#categories-count').text('0');
+        }
+    });
+    
+    $.ajax({
+        url: API_BASE_URL + 'discount-usages/',
+        method: 'GET',
+        success: function(data) {
+            console.log('Использования:', data);
+            const count = getCount(data);
+            $('#usages-count').text(count);
+            
+            const usages = getItems(data);
+            let html = '';
+            
+            if (usages && usages.length > 0) {
+                usages.slice(0, 5).forEach(usage => {
+                    const savings = (usage.original_price - usage.final_price).toFixed(2);
+                    
+                    html += `
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>${usage.product_name || 'Товар'}</strong><br>
+                                <small class="text-muted">${usage.discount_name || 'Скидка'}</small>
+                            </div>
+                            <div class="text-end">
+                                <small class="text-success">-${formatPrice(savings)}</small><br>
+                                <small>${formatDateTime(usage.used_at)}</small>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+            } else {
+                html = '<div class="alert alert-info">Нет истории использований</div>';
+            }
+            $('#recent-usages').html(html);
+        },
+        error: function(error) {
+            console.error('Ошибка использований:', error);
+            $('#usages-count').text('0');
+            $('#recent-usages').html('<div class="alert alert-danger">Ошибка загрузки</div>');
+        }
+    });
+});
+</script>
+{% endblock %}

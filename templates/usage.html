@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}История использования{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0"><i class="bi bi-clock-history"></i> История использования скидок</h4>
+            </div>
+            <div class="card-body">
+
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <select id="discount-filter" class="form-select" onchange="loadUsage(1)">
+                            <option value="">Все скидки</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="product-filter" class="form-select" onchange="loadUsage(1)">
+                            <option value="">Все товары</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <input type="date" id="date-from" class="form-control" placeholder="Дата с" onchange="loadUsage(1)">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="date" id="date-to" class="form-control" placeholder="Дата по" onchange="loadUsage(1)">
+                    </div>
+                </div>
+                
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Всего использований</h6>
+                                <p class="card-text display-6" id="total-usages">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Общая экономия</h6>
+                                <p class="card-text display-6" id="total-savings">0 ₽</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">Средняя скидка</h6>
+                                <p class="card-text display-6" id="average-discount">0%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Дата и время</th>
+                                <th>Скидка</th>
+                                <th>Товар</th>
+                                <th>Пользователь</th>
+                                <th>Количество</th>
+                                <th>Цены</th>
+                                <th>Экономия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usage-table-body">
+
+                        </tbody>
+                    </table>
+                </div>
+                
+
+                <div id="usage-pagination" class="pagination-container"></div>
+                
+
+                <div id="usage-message"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentUsagePage = 1;
+
+
+function loadFilters() {
+
+    $.ajax({
+        url: API_BASE_URL + 'discounts/',
+        method: 'GET',
+        success: function(data) {
+            const discounts = getItems(data);
+            const select = $('#discount-filter');
+            select.empty();
+            select.append('<option value="">Все скидки</option>');
+            
+            discounts.forEach(discount => {
+                select.append(`<option value="${discount.id}">${discount.name}</option>`);
+            });
+        }
+    });
+    
+
+    $.ajax({
+        url: API_BASE_URL + 'products/',
+        method: 'GET',
+        success: function(data) {
+            const products = getItems(data);
+            const select = $('#product-filter');
+            select.empty();
+            select.append('<option value="">Все товары</option>');
+            
+            products.forEach(product => {
+                select.append(`<option value="${product.id}">${product.name} (${product.sku})</option>`);
+            });
+        }
+    });
+}
+
+
+function loadUsage(page = 1) {
+    currentUsagePage = page;
+    
+    const discountId = $('#discount-filter').val();
+    const productId = $('#product-filter').val();
+    const dateFrom = $('#date-from').val();
+    const dateTo = $('#date-to').val();
+    
+    let url = API_BASE_URL + `discount-usages/?page=${page}`;
+    if (discountId) url += `&discount=${discountId}`;
+    if (productId) url += `&product=${productId}`;
+    if (dateFrom) url += `&used_at_after=${dateFrom}T00:00:00`;
+    if (dateTo) url += `&used_at_before=${dateTo}T23:59:59`;
+    
+    showLoading($('#usage-table-body'));
+    $('#usage-message').empty();
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(data) {
+            console.log('История загружена:', data);
+            renderUsageTable(data);
+            updateStatistics(data);
+            renderPagination('usage-pagination', data, 'loadUsage');
+        },
+        error: function(error) {
+            showError($('#usage-table-body'), 'Ошибка загрузки истории');
+            console.error('Ошибка:', error);
+        }
+    });
+}
+
+function updateStatistics(data) {
+    const usages = getItems(data);
+    const totalUsages = getCount(data);
+    
+    let totalSavings = 0;
+    let totalDiscountPercent = 0;
+    let usagesWithSavings = 0;
+    
+    usages.forEach(usage => {
+        const savings = usage.original_price - usage.final_price;
+        const discountPercent = ((savings / usage.original_price) * 100);
+        
+        if (!isNaN(savings) && savings > 0) {
+            totalSavings += savings;
+            totalDiscountPercent += discountPercent;
+            usagesWithSavings++;
+        }
+    });
+    
+    $('#total-usages').text(totalUsages);
+    $('#total-savings').text(formatPrice(totalSavings));
+    
+    const averageDiscount = usagesWithSavings > 0 ? 
+        (totalDiscountPercent / usagesWithSavings).toFixed(1) : 0;
+    $('#average-discount').text(averageDiscount + '%');
+}
+
+
+function renderUsageTable(data) {
+    const usages = getItems(data);
+    const tbody = $('#usage-table-body');
+    
+    if (usages.length === 0) {
+        tbody.html('<tr><td colspan="7" class="text-center">История использования не найдена</td></tr>');
+        return;
+    }
+    
+    let html = '';
+    usages.forEach(usage => {
+        const savings = usage.original_price - usage.final_price;
+        const discountPercent = ((savings / usage.original_price) * 100).toFixed(1);
+        
+        html += `
+        <tr>
+            <td><small>${formatDateTime(usage.used_at)}</small></td>
+            <td><strong>${usage.discount_name || 'Неизвестно'}</strong></td>
+            <td>${usage.product_name || 'Неизвестно'}</td>
+            <td>${usage.username || 'Гость'}</td>
+            <td><span class="badge bg-secondary">${usage.quantity || 1}</span></td>
+            <td>
+                <small>
+                    <del class="text-muted">${formatPrice(usage.original_price)}</del><br>
+                    <strong class="text-success">${formatPrice(usage.final_price)}</strong>
+                </small>
+            </td>
+            <td>
+                <span class="badge bg-success" title="${discountPercent}%">
+                    -${formatPrice(savings)}
+                </span>
+            </td>
+        </tr>`;
+    });
+    
+    tbody.html(html);
+}
+
+
+$(document).ready(function() {
+    loadFilters();
+    loadUsage(1);
+    
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    $('#date-from').val(thirtyDaysAgo.toISOString().split('T')[0]);
+    $('#date-to').val(today.toISOString().split('T')[0]);
+});
+</script>
+{% endblock %}

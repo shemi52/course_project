@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+
+{% block title %}Товары{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="bi bi-box"></i> Управление товарами</h4>
+                {% if user.is_staff %}
+                <button class="btn btn-success" onclick="showCreateProductModal()">
+                    <i class="bi bi-plus-circle"></i> Добавить товар
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <input type="text" id="search-products" class="form-control" placeholder="Поиск по названию или артикулу..." 
+                               onkeyup="loadProducts(1)">
+                    </div>
+                    <div class="col-md-4">
+                        <select id="category-filter" class="form-select" onchange="loadProducts(1)">
+                            <option value="">Все категории</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <select id="sort-products" class="form-select" onchange="loadProducts(1)">
+                            <option value="name">Сортировка: по названию</option>
+                            <option value="-created_at">Сначала новые</option>
+                            <option value="created_at">Сначала старые</option>
+                            <option value="price">Цена: по возрастанию</option>
+                            <option value="-price">Цена: по убыванию</option>
+                        </select>
+                    </div>
+                </div>
+                
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Название</th>
+                                <th>Артикул</th>
+                                <th>Категория</th>
+                                <th>Цена</th>
+                                <th>Дата создания</th>
+                                {% if user.is_staff %}
+                                <th>Действия</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody id="products-table-body">
+                        </tbody>
+                    </table>
+                </div>
+                
+
+                <div id="products-pagination" class="pagination-container"></div>
+                
+
+                <div id="products-message"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productModalTitle">Добавить товар</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="productForm">
+                <div class="modal-body">
+                    <input type="hidden" id="product-id">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Название товара *</label>
+                                <input type="text" class="form-control" id="product-name" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Артикул (SKU) *</label>
+                                <input type="text" class="form-control" id="product-sku" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Категория *</label>
+                                <select class="form-select" id="product-category" required>
+                                    <option value="">Выберите категорию</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Цена (₽) *</label>
+                                <input type="number" step="0.01" class="form-control" id="product-price" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Описание</label>
+                                <textarea class="form-control" id="product-description" rows="8"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary" id="productSubmitBtn">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentProductsPage = 1;
+let categoriesList = [];
+
+function loadCategories() {
+    $.ajax({
+        url: API_BASE_URL + 'categories/',
+        method: 'GET',
+        success: function(data) {
+            categoriesList = getItems(data);
+            
+            const filterSelect = $('#category-filter');
+            filterSelect.empty();
+            filterSelect.append('<option value="">Все категории</option>');
+            
+            const formSelect = $('#product-category');
+            formSelect.empty();
+            formSelect.append('<option value="">Выберите категорию</option>');
+            
+            categoriesList.forEach(category => {
+                filterSelect.append(`<option value="${category.id}">${category.name}</option>`);
+                formSelect.append(`<option value="${category.id}">${category.name}</option>`);
+            });
+        }
+    });
+}
+
+function loadProducts(page = 1) {
+    currentProductsPage = page;
+    
+    const search = $('#search-products').val();
+    const category = $('#category-filter').val();
+    const ordering = $('#sort-products').val();
+    
+    let url = API_BASE_URL + `products/?page=${page}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (category) url += `&category=${category}`;
+    if (ordering) url += `&ordering=${ordering}`;
+    
+    showLoading($('#products-table-body'));
+    $('#products-message').empty();
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(data) {
+            console.log('Товары загружены:', data);
+            renderProductsTable(data);
+            renderPagination('products-pagination', data, 'loadProducts');
+        },
+        error: function(error) {
+            showError($('#products-table-body'), 'Ошибка загрузки товаров');
+            console.error('Ошибка:', error);
+        }
+    });
+}
+
+function renderProductsTable(data) {
+    const products = getItems(data);
+    const tbody = $('#products-table-body');
+    
+    if (products.length === 0) {
+        tbody.html('<tr><td colspan="6" class="text-center">Товары не найдены</td></tr>');
+        return;
+    }
+    
+    let html = '';
+    products.forEach(product => {
+        html += `
+        <tr>
+            <td><strong>${product.name}</strong></td>
+            <td><code>${product.sku}</code></td>
+            <td>${product.category_name || 'Без категории'}</td>
+            <td><span class="badge bg-primary">${formatPrice(product.price)}</span></td>
+            <td><small class="text-muted">${formatDateTime(product.created_at)}</small></td>
+            {% if user.is_staff %}
+            <td class="action-buttons">
+                <button class="btn btn-sm btn-info me-1" onclick="showEditProductModal(${product.id})" title="Редактировать">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="confirmDeleteProduct(${product.id}, '${product.name}')" title="Удалить">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+            {% endif %}
+        </tr>`;
+    });
+    
+    tbody.html(html);
+}
+
+function showCreateProductModal() {
+    $('#productModalTitle').text('Добавить товар');
+    $('#productForm')[0].reset();
+    $('#product-id').val('');
+    $('#productSubmitBtn').text('Создать');
+    
+    const modal = new bootstrap.Modal(document.getElementById('productModal'));
+    modal.show();
+}
+
+function showEditProductModal(productId) {
+    $.ajax({
+        url: API_BASE_URL + 'products/' + productId + '/',
+        method: 'GET',
+        success: function(product) {
+            $('#productModalTitle').text('Редактировать товар');
+            $('#product-id').val(product.id);
+            $('#product-name').val(product.name);
+            $('#product-sku').val(product.sku);
+            $('#product-price').val(product.price);
+            $('#product-description').val(product.description || '');
+            $('#product-category').val(product.category);
+            $('#productSubmitBtn').text('Сохранить изменения');
+            
+            const modal = new bootstrap.Modal(document.getElementById('productModal'));
+            modal.show();
+        }
+    });
+}
+
+$('#productForm').submit(function(e) {
+    e.preventDefault();
+    
+    const productId = $('#product-id').val();
+    const url = productId ? 
+        API_BASE_URL + 'products/' + productId + '/' : 
+        API_BASE_URL + 'products/';
+    const method = productId ? 'PUT' : 'POST';
+    
+    const data = {
+        name: $('#product-name').val(),
+        sku: $('#product-sku').val(),
+        category: $('#product-category').val(),
+        price: $('#product-price').val(),
+        description: $('#product-description').val()
+    };
+    
+    $('#productSubmitBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status"></span> Сохранение...');
+    
+    $.ajax({
+        url: url,
+        method: method,
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        success: function() {
+            $('#productModal').modal('hide');
+            showAlert(productId ? 'Товар успешно обновлен!' : 'Товар успешно создан!');
+            loadProducts(currentProductsPage);
+        },
+        error: function(error) {
+            let message = 'Ошибка сохранения товара';
+            if (error.responseJSON) {
+                message += ': ' + Object.values(error.responseJSON).join(', ');
+            }
+            alert(message);
+        },
+        complete: function() {
+            $('#productSubmitBtn').prop('disabled', false).text(productId ? 'Сохранить изменения' : 'Создать');
+        }
+    });
+});
+
+
+function confirmDeleteProduct(productId, productName) {
+    showConfirmation(
+        `Вы уверены, что хотите удалить товар <strong>"${productName}"</strong>?`,
+        function() {
+            deleteProduct(productId);
+        }
+    );
+}
+
+
+function deleteProduct(productId) {
+    $.ajax({
+        url: API_BASE_URL + 'products/' + productId + '/',
+        method: 'DELETE',
+        success: function() {
+            showAlert('Товар успешно удален!');
+            loadProducts(currentProductsPage);
+        },
+        error: function() {
+            showAlert('Ошибка при удалении товара', 'danger');
+        }
+    });
+}
+
+
+$(document).ready(function() {
+    loadCategories();
+    loadProducts(1);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+
+{% block title %}Скидки{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="bi bi-tag"></i> Управление скидками</h4>
+                {% if user.is_staff %}
+                <button class="btn btn-success" onclick="showCreateDiscountModal()">
+                    <i class="bi bi-plus-circle"></i> Добавить скидку
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <input type="text" id="search-discounts" class="form-control" placeholder="Поиск по названию..." 
+                               onkeyup="loadDiscounts(1)">
+                    </div>
+                    <div class="col-md-3">
+                        <select id="status-filter" class="form-select" onchange="loadDiscounts(1)">
+                            <option value="">Все статусы</option>
+                            <option value="active">Активные</option>
+                            <option value="upcoming">Предстоящие</option>
+                            <option value="expired">Завершенные</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="type-filter" class="form-select" onchange="loadDiscounts(1)">
+                            <option value="">Все типы</option>
+                            <option value="percentage">Процентные</option>
+                            <option value="fixed">Фиксированные</option>
+                            <option value="bundle">Наборы</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select id="sort-discounts" class="form-select" onchange="loadDiscounts(1)">
+                            <option value="-start_date">Сначала новые</option>
+                            <option value="start_date">Сначала старые</option>
+                            <option value="name">По названию</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Название</th>
+                                <th>Тип</th>
+                                <th>Значение</th>
+                                <th>Статус</th>
+                                <th>Период</th>
+                                <th>Товары</th>
+                                {% if user.is_staff %}
+                                <th>Действия</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody id="discounts-table-body">
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="discounts-pagination" class="pagination-container"></div>
+                
+                <div id="discounts-message"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="applyDiscountModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Применить скидку</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="apply-discount-content">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="discountModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="discountModalTitle">Добавить скидку</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="discountForm">
+                <div class="modal-body">
+                    <input type="hidden" id="discount-id">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Название скидки *</label>
+                                <input type="text" class="form-control" id="discount-name" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Тип скидки *</label>
+                                <select class="form-select" id="discount-type" required>
+                                    <option value="percentage">Процентная</option>
+                                    <option value="fixed">Фиксированная сумма</option>
+                                    <option value="bundle">Набор (2+1)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label" id="discount-value-label">Процент скидки (%) *</label>
+                                <input type="number" step="0.01" class="form-control" id="discount-value" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Статус *</label>
+                                <select class="form-select" id="discount-status" required>
+                                    <option value="upcoming">Предстоящая</option>
+                                    <option value="active">Активная</option>
+                                    <option value="expired">Завершенная</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Минимальное количество *</label>
+                                <input type="number" class="form-control" id="discount-min-quantity" value="1" min="1" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Дата начала *</label>
+                                <input type="datetime-local" class="form-control" id="discount-start-date" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Дата окончания *</label>
+                                <input type="datetime-local" class="form-control" id="discount-end-date" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Категории товаров</label>
+                                <select class="form-select" id="discount-categories" multiple>
+                                </select>
+                                <small class="text-muted">Выберите категории, к которым применяется скидка</small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Товары</label>
+                                <select class="form-select" id="discount-products" multiple>
+                                </select>
+                                <small class="text-muted">Выберите конкретные товары для скидки</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary" id="discountSubmitBtn">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentDiscountsPage = 1;
+let categoriesList = [];
+let productsList = [];
+let currentDiscountForApply = null;
+
+function loadFormData() {
+    $.ajax({
+        url: API_BASE_URL + 'categories/',
+        method: 'GET',
+        success: function(data) {
+            categoriesList = getItems(data);
+            const select = $('#discount-categories');
+            select.empty();
+            categoriesList.forEach(category => {
+                select.append(`<option value="${category.id}">${category.name}</option>`);
+            });
+        }
+    });
+    
+    $.ajax({
+        url: API_BASE_URL + 'products/',
+        method: 'GET',
+        success: function(data) {
+            productsList = getItems(data);
+            const select = $('#discount-products');
+            select.empty();
+            productsList.forEach(product => {
+                select.append(`<option value="${product.id}">${product.name} (${product.sku})</option>`);
+            });
+        }
+    });
+}
+
+$('#discount-type').change(function() {
+    const type = $(this).val();
+    const label = $('#discount-value-label');
+    const input = $('#discount-value');
+    
+    if (type === 'percentage') {
+        label.text('Процент скидки (%) *');
+        input.attr('step', '0.01');
+    } else if (type === 'fixed') {
+        label.text('Фиксированная сумма (₽) *');
+        input.attr('step', '0.01');
+    } else {
+        label.text('Количество товаров в наборе *');
+        input.attr('step', '1');
+    }
+});
+
+function loadDiscounts(page = 1) {
+    currentDiscountsPage = page;
+    
+    const search = $('#search-discounts').val();
+    const status = $('#status-filter').val();
+    const type = $('#type-filter').val();
+    const ordering = $('#sort-discounts').val();
+    
+    let url = API_BASE_URL + `discounts/?page=${page}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (status) url += `&status=${status}`;
+    if (type) url += `&discount_type=${type}`;
+    if (ordering) url += `&ordering=${ordering}`;
+    
+    showLoading($('#discounts-table-body'));
+    $('#discounts-message').empty();
+    
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(data) {
+            console.log('Скидки загружены:', data);
+            renderDiscountsTable(data);
+            renderPagination('discounts-pagination', data, 'loadDiscounts');
+        },
+        error: function(error) {
+            showError($('#discounts-table-body'), 'Ошибка загрузки скидок');
+            console.error('Ошибка:', error);
+        }
+    });
+}
+
+function renderDiscountsTable(data) {
+    const discounts = getItems(data);
+    const tbody = $('#discounts-table-body');
+    
+    if (discounts.length === 0) {
+        tbody.html('<tr><td colspan="7" class="text-center">Скидки не найдены</td></tr>');
+        return;
+    }
+    
+    let html = '';
+    discounts.forEach(discount => {
+        const valueDisplay = discount.discount_type === 'percentage' ? 
+            discount.value + '%' : 
+            formatPrice(discount.value);
+        
+        const isActive = discount.is_active;
+        const isApplicable = isActive && checkDiscountApplicableNow(discount);
+        
+        html += `
+        <tr>
+            <td>
+                <strong>${discount.name}</strong>
+                ${isActive ? '<span class="badge bg-success ms-1">АКТИВНА</span>' : ''}
+            </td>
+            <td>${getDiscountTypeBadge(discount.discount_type)}</td>
+            <td><span class="badge bg-primary">${valueDisplay}</span></td>
+            <td>${getStatusBadge(discount.status)}</td>
+            <td>
+                <small>
+                    с ${formatDateTime(discount.start_date)}<br>
+                    до ${formatDateTime(discount.end_date)}
+                </small>
+            </td>
+            <td>
+                <span class="badge bg-secondary">${discount.products_detail?.length || 0}</span>
+            </td>
+            {% if user.is_staff %}
+            <td class="action-buttons">
+                <button class="btn btn-sm btn-info me-1" onclick="showEditDiscountModal(${discount.id})" title="Редактировать">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                ${isApplicable ? `
+                <button class="btn btn-sm btn-success me-1" onclick="showApplyDiscountModal(${discount.id})" title="Применить скидку">
+                    <i class="bi bi-cart-check"></i>
+                </button>
+                ` : ''}
+                <button class="btn btn-sm btn-danger" onclick="confirmDeleteDiscount(${discount.id}, '${discount.name}')" title="Удалить">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+            {% endif %}
+        </tr>`;
+    });
+    
+    tbody.html(html);
+}
+
+function checkDiscountApplicableNow(discount) {
+    const now = new Date();
+    const startDate = new Date(discount.start_date);
+    const endDate = new Date(discount.end_date);
+    
+    return discount.status === 'active' && 
+           startDate <= now && 
+           endDate >= now;
+}
+
+function showApplyDiscountModal(discountId) {
+    currentDiscountForApply = discountId;
+    
+    $.ajax({
+        url: API_BASE_URL + 'discounts/' + discountId + '/',
+        method: 'GET',
+        success: function(discount) {
+            loadProductsForDiscount(discount);
+        }
+    });
+}
+
+function loadProductsForDiscount(discount) {
+    $.ajax({
+        url: API_BASE_URL + 'products/',
+        method: 'GET',
+        success: function(data) {
+            const allProducts = getItems(data);
+            
+            const applicableProducts = allProducts.filter(product => {
+                const productInDiscount = discount.products_detail?.some(p => p.id == product.id);
+                const categoryInDiscount = discount.categories_detail?.some(c => c.id == product.category);
+                
+                return productInDiscount || categoryInDiscount;
+            });
+            
+            renderApplyDiscountForm(discount, applicableProducts);
+        }
+    });
+}
+
+function renderApplyDiscountForm(discount, applicableProducts) {
+    let html = `
+    <h5>Применить скидку: ${discount.name}</h5>
+    <div class="alert alert-info">
+        <strong>Тип скидки:</strong> ${getDiscountTypeDisplay(discount.discount_type)}<br>
+        <strong>Значение:</strong> ${discount.value}${discount.discount_type === 'percentage' ? '%' : ' ₽'}<br>
+        <strong>Минимальное количество:</strong> ${discount.min_quantity}
+    </div>`;
+    
+    if (applicableProducts.length === 0) {
+        html += `
+        <div class="alert alert-warning">
+            Нет товаров, к которым можно применить эту скидку
+        </div>`;
+    } else {
+        html += `
+        <div class="mb-3">
+            <label class="form-label">Выберите товары для применения скидки:</label>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th width="50"><input type="checkbox" id="select-all-products"></th>
+                            <th>Товар</th>
+                            <th>Цена</th>
+                            <th>Количество</th>
+                            <th>Итого</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+        
+        applicableProducts.forEach(product => {
+            html += `
+            <tr>
+                <td>
+                    <input type="checkbox" class="product-checkbox" value="${product.id}" 
+                           data-price="${product.price}" data-name="${product.name}">
+                </td>
+                <td>${product.name}<br><small class="text-muted">${product.sku}</small></td>
+                <td>${formatPrice(product.price)}</td>
+                <td>
+                    <input type="number" class="form-control form-control-sm quantity-input" 
+                           value="1" min="1" data-product="${product.id}" style="width: 80px;">
+                </td>
+                <td class="item-total" id="total-${product.id}">${formatPrice(product.price)}</td>
+            </tr>`;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    <label class="form-label">Пользователь (опционально)</label>
+                    <input type="text" class="form-control" id="apply-user" placeholder="Имя пользователя">
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="alert alert-secondary">
+                    <strong>Итоги:</strong><br>
+                    Товаров: <span id="apply-items-count">0</span><br>
+                    Сумма: <span id="apply-subtotal">0 ₽</span><br>
+                    Скидка: <span id="apply-discount">0 ₽</span><br>
+                    <strong>Итого: <span id="apply-total">0 ₽</span></strong>
+                </div>
+            </div>
+        </div>
+        
+        <div class="d-flex justify-content-between mt-3">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" class="btn btn-success" onclick="applyDiscountToSelected()">
+                <i class="bi bi-check-circle"></i> Применить скидку
+            </button>
+        </div>`;
+    }
+    
+    $('#apply-discount-content').html(html);
+    
+    $('#select-all-products').change(function() {
+        $('.product-checkbox').prop('checked', this.checked).trigger('change');
+    });
+    
+    $('.product-checkbox').change(updateApplyTotals);
+    $('.quantity-input').on('input', updateApplyTotals);
+    
+    const modal = new bootstrap.Modal(document.getElementById('applyDiscountModal'));
+    modal.show();
+}
+
+function updateApplyTotals() {
+    let selectedCount = 0;
+    let subtotal = 0;
+    let discountAmount = 0;
+    
+    $('.product-checkbox:checked').each(function() {
+        const productId = $(this).val();
+        const price = parseFloat($(this).data('price'));
+        const quantity = parseInt($(`.quantity-input[data-product="${productId}"]`).val()) || 1;
+        
+        selectedCount++;
+        subtotal += price * quantity;
+        
+        $(`#total-${productId}`).text(formatPrice(price * quantity));
+    });
+    
+    if (currentDiscountForApply) {
+        $.ajax({
+            url: API_BASE_URL + 'discounts/' + currentDiscountForApply + '/',
+            method: 'GET',
+            success: function(discount) {
+                if (discount.discount_type === 'percentage') {
+                    discountAmount = subtotal * (discount.value / 100);
+                } else if (discount.discount_type === 'fixed') {
+                    discountAmount = discount.value * selectedCount;
+                }
+                
+                const total = subtotal - discountAmount;
+                
+                $('#apply-items-count').text(selectedCount);
+                $('#apply-subtotal').text(formatPrice(subtotal));
+                $('#apply-discount').text(`-${formatPrice(discountAmount)}`);
+                $('#apply-total').text(formatPrice(total));
+            }
+        });
+    }
+}
+
+function applyDiscountToSelected() {
+    const selectedProducts = [];
+    const quantities = {};
+    
+    $('.product-checkbox:checked').each(function() {
+        const productId = $(this).val();
+        const quantity = parseInt($(`.quantity-input[data-product="${productId}"]`).val()) || 1;
+        
+        selectedProducts.push(parseInt(productId));
+        quantities[productId] = quantity;
+    });
+    
+    if (selectedProducts.length === 0) {
+        alert('Выберите хотя бы один товар');
+        return;
+    }
+    
+    const userName = $('#apply-user').val();
+    
+    $.ajax({
+        url: API_BASE_URL + 'discounts/' + currentDiscountForApply + '/apply_to_cart/',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            product_ids: selectedProducts,
+            quantities: quantities
+        }),
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
+        success: function(result) {
+            createDiscountUsageRecords(result, selectedProducts, quantities, userName);
+        },
+        error: function(xhr) {
+            alert(xhr.responseJSON?.error || 'Ошибка при расчете скидки');
+        }
+    });
+}
+
+
+function createDiscountUsageRecords(result, productIds, quantities, userName) {
+    const discountId = currentDiscountForApply;
+    const usagePromises = [];
+    
+
+    productIds.forEach(productId => {
+        const appliedItem = result.applied_items?.find(item => 
+            item.product_id == productId
+        );
+        
+        if (appliedItem) {
+            const usageData = {
+                discount: discountId,
+                product: productId,
+                original_price: appliedItem.original_price,
+                final_price: appliedItem.final_price,
+                quantity: quantities[productId] || 1
+            };
+            
+            if (userName) {
+                usageData.user = userName; 
+            }
+            
+            const promise = $.ajax({
+                url: API_BASE_URL + 'discount-usages/',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(usageData),
+                headers: {
+                    'X-CSRFToken': getCSRFToken()
+                }
+            });
+            
+            usagePromises.push(promise);
+        }
+    });
+    
+    Promise.all(usagePromises).then(() => {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('applyDiscountModal'));
+        modal.hide();
+        
+        showAlert(`Скидка "${result.discount_name}" успешно применена! Создано ${usagePromises.length} записей об использовании.`);
+        
+        if (typeof loadUsage === 'function') {
+            loadUsage(1);
+        }
+        loadDiscounts(currentDiscountsPage);
+        
+    }).catch(error => {
+        console.error('Ошибка создания записей использования:', error);
+        alert('Ошибка при создании записей об использовании скидки');
+    });
+}
+
+function getDiscountTypeDisplay(type) {
+    const types = {
+        'percentage': 'Процентная',
+        'fixed': 'Фиксированная сумма',
+        'bundle': 'Набор (2+1)'
+    };
+    return types[type] || type;
+}
+
+function showCreateDiscountModal() {
+    $('#discountModalTitle').text('Добавить скидку');
+    $('#discountForm')[0].reset();
+    $('#discount-id').val('');
+    $('#discount-type').trigger('change');
+    $('#discount-status').val('upcoming');
+    $('#discount-min-quantity').val(1);
+    
+    const now = new Date();
+    const startDate = new Date(now.getTime() + 60 * 60 * 1000); 
+    const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); 
+    
+    $('#discount-start-date').val(startDate.toISOString().slice(0, 16));
+    $('#discount-end-date').val(endDate.toISOString().slice(0, 16));
+    
+    $('#discountSubmitBtn').text('Создать');
+    
+    const modal = new bootstrap.Modal(document.getElementById('discountModal'));
+    modal.show();
+}
+
+function showEditDiscountModal(discountId) {
+    $.ajax({
+        url: API_BASE_URL + 'discounts/' + discountId + '/',
+        method: 'GET',
+        success: function(discount) {
+            $('#discountModalTitle').text('Редактировать скидку');
+            $('#discount-id').val(discount.id);
+            $('#discount-name').val(discount.name);
+            $('#discount-type').val(discount.discount_type).trigger('change');
+            $('#discount-value').val(discount.value);
+            $('#discount-status').val(discount.status);
+            $('#discount-min-quantity').val(discount.min_quantity);
+            
+            $('#discount-start-date').val(discount.start_date.slice(0, 16));
+            $('#discount-end-date').val(discount.end_date.slice(0, 16));
+            
+            $('#discount-categories').val(discount.categories || []);
+            
+            $('#discount-products').val(discount.products || []);
+            
+            $('#discountSubmitBtn').text('Сохранить изменения');
+            
+            const modal = new bootstrap.Modal(document.getElementById('discountModal'));
+            modal.show();
+        }
+    });
+}
+$('#discountForm').submit(function(e) {
+    e.preventDefault();
+    
+    const discountId = $('#discount-id').val();
+    const url = discountId ? 
+        API_BASE_URL + 'discounts/' + discountId + '/' : 
+        API_BASE_URL + 'discounts/';
+    const method = discountId ? 'PUT' : 'POST';
+    
+    const data = {
+        name: $('#discount-name').val(),
+        discount_type: $('#discount-type').val(),
+        value: parseFloat($('#discount-value').val()),
+        status: $('#discount-status').val(),
+        start_date: $('#discount-start-date').val() + ':00',
+        end_date: $('#discount-end-date').val() + ':00',
+        min_quantity: parseInt($('#discount-min-quantity').val()),
+        categories: Array.from($('#discount-categories').val()).map(id => parseInt(id)),
+        products: Array.from($('#discount-products').val()).map(id => parseInt(id))
+    };
+    
+    $('#discountSubmitBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status"></span> Сохранение...');
+    
+    $.ajax({
+        url: url,
+        method: method,
+        contentType: 'application/json',
+        data: JSON.stringify(data),
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
+        success: function() {
+            $('#discountModal').modal('hide');
+            showAlert(discountId ? 'Скидка успешно обновлена!' : 'Скидка успешно создана!');
+            loadDiscounts(currentDiscountsPage);
+        },
+        error: function(error) {
+            let message = 'Ошибка сохранения скидки';
+            if (error.responseJSON) {
+                message += ': ' + Object.values(error.responseJSON).join(', ');
+            }
+            alert(message);
+        },
+        complete: function() {
+            $('#discountSubmitBtn').prop('disabled', false).text(discountId ? 'Сохранить изменения' : 'Создать');
+        }
+    });
+});
+
+function confirmDeleteDiscount(discountId, discountName) {
+    showConfirmation(
+        `Вы уверены, что хотите удалить скидку <strong>"${discountName}"</strong>?`,
+        function() {
+            deleteDiscount(discountId);
+        }
+    );
+}
+
+
+function deleteDiscount(discountId) {
+    $.ajax({
+        url: API_BASE_URL + 'discounts/' + discountId + '/',
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': getCSRFToken()
+        },
+        success: function() {
+            showAlert('Скидка успешно удалена!');
+            loadDiscounts(currentDiscountsPage);
+        },
+        error: function() {
+            showAlert('Ошибка при удалении скидки', 'danger');
+        }
+    });
+}
+
+
+function getCSRFToken() {
+    return getCookie('csrftoken');
+}
+
+$(document).ready(function() {
+    loadFormData();
+    loadDiscounts(1);
+});
+</script>
+{% endblock %}
